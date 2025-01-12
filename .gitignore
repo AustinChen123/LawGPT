@@ -161,5 +161,7 @@ cython_debug/
 
 #  upload data in .zip rather than .json
 *.json
+*.parquet
+*.pkl
 
 .vscode/
