@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import json
+import time
 from config.settings import Settings
 from crawler.crawler import Crawler
 from rag.preprocessor import Preprocessor
@@ -37,6 +38,7 @@ def main():
         crawler.run()
 
     # **2. 嵌入與上傳過程**
+    # **Embedding rate: 1500RPM**
     if args.embedding:
         print("[INFO] Executing embedding and uploading vectors...")
 
@@ -44,9 +46,11 @@ def main():
         embedding_api = GeminiEmbeddingAPI(settings.GOOGLE_API_KEY)
         preprocessor = Preprocessor(embedding_api)
         uploader = Uploader("lawgpt", settings.PINECONE_API_KEY)
-
+        progress = uploader.load_progress()
+        current_count = progress.get("current_count", 0)
+        i = 0
         # 遍歷資料夾處理 JSON 檔案
-        for root, dirs, files in os.walk(args.data_folder):
+        for root, dirs, files in os.walk(settings.DATA_FOLDER):
             for filename in files:
                 if filename.endswith('.json'):
                     file_path = os.path.join(root, filename)
@@ -58,10 +62,17 @@ def main():
 
                     # 逐筆處理每個 section
                     main_topic = data.get('main_topic', 'Unknown')
+                    prev_index = 0
                     for sec_id, section_data in enumerate(data.get('sections', [])):
                         section = section_data.get('section', '')
                         content = section_data.get('content', '')
                         link = section_data.get('link', '')
+
+                        if i < current_count:
+                            print(
+                                f"Skipping section {i+1} for '{main_topic}' (already uploaded).")
+                            i += 1
+                            continue
 
                         # 嵌入並逐筆上傳
                         processed_data = preprocessor.process_text(content)
@@ -71,13 +82,18 @@ def main():
                                 section={
                                     "section": section,
                                     "link": link,
+                                    "content": item["chunk"],
                                     "filename": filename
                                 },
                                 vector=item["embedding"],
-                                index=sec_id + chunk_index
+                                index=prev_index
                             )
                             print(
-                                f"[INFO] Finished upload: {filename} -> Section: {section} -> Chunk: {chunk_index+1}")
+                                f"[INFO] -- Finished upload: {filename} -> Section: {section} -> Chunk: {chunk_index+1}")
+                            prev_index += 1
+                        i += 1
+                        uploader.save_progress(i)
+                        time.sleep(60/1500)
 
     # **3. RAG 流程**
     if False:
