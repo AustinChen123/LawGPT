@@ -102,13 +102,14 @@ This is a simple practice project demonstrating how to build an RAG (Retrieval-A
 .
 ├── crawler/
 │   ├── crawler.py         # Web scraping logic
+│   ├── url_handler.py     # url supporter function
+│   ├── extractor.py       # extract text from html
 │   └── storage.py         # Data storage (JSON, etc.)
 ├── rag/
 │   ├── preprocessor.py    # Converts text into embeddings
 │   ├── uploader.py        # Uploads vectors + metadata to Pinecone
 │   ├── gemini_api.py      # Example LLM integration (Google Generative AI)
-│   ├── llm_connector.py   # Another approach for LLM calls
-│   └── retriever.py       # Example for searching the vector DB
+│   └── llm_connector.py   # Another approach for LLM calls
 ├── config/
 │   └── settings.py        # Global config or environment loading
 ├── data/                  # Stored crawled data
