@@ -111,8 +111,6 @@ def main():
         index = pc.Index(
             host="https://lawgpt-qitbai1.svc.aped-4627-b74a.pinecone.io")
 
-        target_lang = "de"
-
         llm = GeminiLLMAPI(
             api_key=settings.GOOGLE_API_KEY,
             model="models/gemini-2.0-flash-exp",
@@ -141,7 +139,7 @@ def main():
                 user_language = "de"
             # (a) 翻譯使用者問題到目標語言
             translation_prompt = (
-                f"Translate the following text to {target_lang}:\n\n"
+                f"Translate the following text to de:\n\n"
                 f"{user_input}\n\n"
                 "Only provide the translated text in de."
             )
