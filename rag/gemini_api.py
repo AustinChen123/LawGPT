@@ -54,32 +54,3 @@ class GeminiLLMAPI(BaseLLMAPI):
         :return: 模型生成的回答
         """
         return self.llm.generate_content(prompt).text
-
-
-class GeminiLLMAPI_LlamaIndex(BaseLLMAPI):
-    """
-    使用 LlamaIndex 的 Gemini LLM API 實現
-    """
-
-    def __init__(self, model: str = "models/gemini-1.5-flash", system_instruction: str = "You are a helpful assistant."):
-        """
-        初始化 LLM API
-        :param model: 使用的 Gemini 模型（例如 models/gemini-1.5-flash 或 models/gemini-2.0-flash-exp）
-        :param system_instruction: 系統提示，可外部設置
-        """
-        from llama_index.llms.gemini import Gemini
-        self.llm = Gemini(
-            model=model,
-            system_instruction=system_instruction
-        )
-
-    def generate_response(self, context: str, question: str) -> str:
-        """
-        根據上下文和問題生成回答
-        :param context: 提供的上下文
-        :param question: 用戶的問題
-        :return: 模型生成的回答
-        """
-        # 組合 Prompt
-        prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
-        return self.llm.complete(prompt).text

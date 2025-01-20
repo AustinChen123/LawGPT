@@ -117,7 +117,8 @@ def main():
                                 Don't do extra inference if the documents don't specify.\
                                 Don't talk too much about how you search the documents, but saying 'consult professional lawyers'\
                                 Don't say 'from documents' but directly answer the question with the information provided.\
-                                Extra information could be provided if they are mentioned in the documents."
+                                Extra information could be provided if they are mentioned in the documents. \
+                                Also specify which law you are referencing"
         )
         embedding_api = GeminiEmbeddingAPI(settings.GOOGLE_API_KEY)
 
@@ -150,10 +151,12 @@ def main():
 
             # 假設我們把所有相似節點的內容都串起來
             retrieved_text = ""
+            links = []
             for match in matches:
                 meta = match.get("metadata", {})
                 # 如果你在 metadata 裏存了原始文本
                 chunk_content = meta.get("content", "")
+                links.append(meta.get("link", ""))
                 retrieved_text += chunk_content + "\n"
 
             # (e) 將回答翻譯回使用者原始語言
