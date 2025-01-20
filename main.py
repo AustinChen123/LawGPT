@@ -8,7 +8,11 @@ from crawler.crawler import Crawler
 from rag.preprocessor import Preprocessor
 from rag.uploader import Uploader
 from rag.gemini_api import GeminiEmbeddingAPI, GeminiLLMAPI
-from pinecone import ServerlessSpec
+from pinecone import Pinecone
+from langdetect import detect, detect_langs
+from rich.console import Console
+from rich.panel import Panel
+
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -96,46 +100,83 @@ def main():
                         time.sleep(60/1500)
 
     # **3. RAG 流程**
-    if False:
+    if args.rag or not (args.crawl or args.embedding):
         # if args.rag or not (args.crawl or args.embedding):
         print("[INFO] Running RAG...")
-        # 模擬數據
-        context = "The quick brown fox jumps over the lazy dog."
-        question = "What is jumping over the lazy dog?"
+        pc = Pinecone(api_key=settings.PINECONE_API_KEY)
+        index = pc.Index(
+            host="https://lawgpt-qitbai1.svc.aped-4627-b74a.pinecone.io")
 
-        # 初始化 LLM 模組
-        llm_api = GeminiLLMAPI(
-            model="models/gemini-1.5-flash",
-            system_instruction="You are a helpful assistant."
+        target_lang = "de"
+
+        llm = GeminiLLMAPI(
+            api_key=settings.GOOGLE_API_KEY,
+            model="models/gemini-2.0-flash-exp",
+            system_instruction="You are a law advisor. We will provide relevant material to the questions,\
+                                please answer based on the documents and following the instructions.\
+                                Don't do extra inference if the documents don't specify.\
+                                Don't talk too much about how you search the documents, but saying 'consult professional lawyers'\
+                                Don't say 'from documents' but directly answer the question with the information provided.\
+                                Extra information could be provided if they are mentioned in the documents."
         )
+        embedding_api = GeminiEmbeddingAPI(settings.GOOGLE_API_KEY)
 
-        # 查詢向量資料庫（模擬）
-        query_results = [
-            {
-                "section": "Section 1",
-                "content": "The quick brown fox jumps over the lazy dog.",
-                "link": "https://example.com/section1"
-            },
-            {
-                "section": "Section 2",
-                "content": "This is another example section.",
-                "link": "https://example.com/section2"
-            }
-        ]
-
+        console = Console()
         # **執行 Rerank（如果啟用）**
-        if args.rerank:
-            print("[INFO] 執行 Rerank 過程...")
-            # 模擬 Rerank 的結果處理（未實現詳細邏輯）
-            query_results = sorted(
-                query_results, key=lambda x: len(x["content"]), reverse=True)
+        while True:
+            user_input = input(
+                "Please enter your question (or 'exit' to quit): ")
+            if user_input.lower() == 'exit':
+                break
 
-        # 整理查詢結果作為上下文
-        context = "\n".join([result["content"] for result in query_results])
+            # (a) 翻譯使用者問題到目標語言
+            translation_prompt = (
+                f"Translate the following text to {target_lang}:\n\n"
+                f"{user_input}\n\n"
+                "Only provide the translated text in de."
+            )
+            translated_input = llm.generate_response(translation_prompt)
+            vector = embedding_api.embed_text(translated_input)
+            # (b) Query Engine 查詢
+            response = index.query(
+                vector=vector,
+                top_k=10,
+                include_values=True,
+                include_metadata=True
+            )
 
-        # 向 LLM 提問
-        response = llm_api.generate_response(context, question)
-        print(f"[RAG Response]: {response}")
+            # (d) 整理結果
+            matches = response["matches"]
+
+            # 假設我們把所有相似節點的內容都串起來
+            retrieved_text = ""
+            for match in matches:
+                meta = match.get("metadata", {})
+                # 如果你在 metadata 裏存了原始文本
+                chunk_content = meta.get("content", "")
+                retrieved_text += chunk_content + "\n"
+
+            # (e) 將回答翻譯回使用者原始語言
+            user_language = "zh-tw"
+            answer_translation_prompt = (
+                f"Translate the following text to the same language as the user's original question.\n\n"
+                f"User's Original Question:\n{user_input}\n\n"
+                f"Supporting documents:\n{retrieved_text}\n\n"
+                f"Only provide the answer related to the question in {user_language}."
+            )
+            translated_answer = llm.generate_response(
+                answer_translation_prompt)
+            # ------------------------------------------------------------
+            # 4. 輸出結果
+            # ------------------------------------------------------------
+            output_data = {
+                "Original Question": user_input,
+                "Translated Question": translated_input,
+                "Translated Answer": translated_answer
+            }
+            for key, value in output_data.items():
+                panel = Panel(value, title=key, expand=False)
+                console.print(panel)
 
 
 if __name__ == "__main__":

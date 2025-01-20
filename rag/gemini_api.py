@@ -33,7 +33,7 @@ class GeminiLLMAPI(BaseLLMAPI):
     使用 Gemini 的 LLM API 實現
     """
 
-    def __init__(self, model: str = "models/gemini-1.5-flash", system_instruction: str = "You are a helpful assistant."):
+    def __init__(self, api_key: str, model: str = "models/gemini-1.5-flash", system_instruction: str = "You are a helpful assistant."):
         """
         初始化 LLM API
         :param model: 使用的 Gemini 模型
@@ -42,18 +42,17 @@ class GeminiLLMAPI(BaseLLMAPI):
         import google.generativeai as genai
         genai.configure(api_key=api_key)
         self.llm = genai.GenerativeModel(
-            model=model,
+            model,
             system_instruction=system_instruction
         )
 
-    def generate_response(self, context: str, question: str) -> str:
+    def generate_response(self, prompt) -> str:
         """
         根據上下文和問題生成回答
         :param context: 提供的上下文
         :param question: 用戶的問題
         :return: 模型生成的回答
         """
-        prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
         return self.llm.generate_content(prompt).text
 
 
