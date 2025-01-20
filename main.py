@@ -32,6 +32,10 @@ def main():
     args = parser.parse_args()
 
     settings = Settings()
+    user_language = input(
+        "Enter which language you want to use for the answer (en, zh, zh-tw etc.) :")
+    if user_language == "":
+        user_language = "de"
     # **1. 爬蟲過程**
     if args.crawl:
         print("[INFO] Running crawling process...")
@@ -126,10 +130,15 @@ def main():
         # **執行 Rerank（如果啟用）**
         while True:
             user_input = input(
-                "Please enter your question (or 'exit' to quit): ")
+                "Please enter your question ('lang' for language setting or 'exit' to quit): ")
             if user_input.lower() == 'exit':
                 break
-
+            if user_input.lower() == 'lang':
+                user_language = input(
+                    "Enter which language you want to use for the answer (en, zh, zh-tw etc.) :")
+                continue
+            if user_language == "":
+                user_language = "de"
             # (a) 翻譯使用者問題到目標語言
             translation_prompt = (
                 f"Translate the following text to {target_lang}:\n\n"
@@ -160,7 +169,7 @@ def main():
                 retrieved_text += chunk_content + "\n"
 
             # (e) 將回答翻譯回使用者原始語言
-            user_language = "zh-tw"
+
             answer_translation_prompt = (
                 f"Translate the following text to the same language as the user's original question.\n\n"
                 f"User's Original Question:\n{user_input}\n\n"
