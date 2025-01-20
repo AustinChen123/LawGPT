@@ -69,10 +69,8 @@ This is a simple practice project demonstrating how to build an RAG (Retrieval-A
 
 4. **Environment Variables**
    - Copy `.env.example` to `.env` (if provided), fill in your `API_KEY`s, etc.
-   - Or set environment variables directly (e.g., `PINECONE_API_KEY`, `GOOGLE_API_KEY`).
 
 ## Usage
-
 - **Crawl**
 
   ```bash
