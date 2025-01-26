@@ -71,6 +71,7 @@ This is a simple practice project demonstrating how to build an RAG (Retrieval-A
    - Copy `.env.example` to `.env` (if provided), fill in your `API_KEY`s, etc.
 
 ## Usage
+
 - **Crawl**
 
   ```bash
@@ -88,11 +89,22 @@ This is a simple practice project demonstrating how to build an RAG (Retrieval-A
   Converts scraped text into vectors and upserts them to Pinecone (or another vector DB).
 
 - **RAG (Query)**
+
+  After finish crawling and embedding
+
   ```bash
   python main.py --rag
   ```
-  Prompts the LLM with a user question. The system retrieves relevant context from the vector DB and combines it with an LLM to generate an answer.  
-  _Add `--rerank` if you want to enable rerank logic._
+
+  or
+
+  ```
+  python main_streamlit.py # streamlit version
+  ```
+
+  Prompts the LLM with a user question. The system retrieves relevant context from the vector DB and combines it with an LLM to generate an answer.
+
+### The `--rerank` function is still a work in progress.
 
 ## Project Structure
 
@@ -113,6 +125,7 @@ This is a simple practice project demonstrating how to build an RAG (Retrieval-A
 ├── data/                  # Stored crawled data
 ├── venv/                  # (optional) virtual environment
 ├── main.py                # CLI workflow entry point
+├── main_streamlit.py                # Entry point for streamlit
 └── README.md
 ```
 
@@ -120,6 +133,10 @@ This is a simple practice project demonstrating how to build an RAG (Retrieval-A
 
 - By default, the project uses Pinecone as its vector database. You can switch to another vector store (e.g., Weaviate, Milvus) if desired, but you’ll need corresponding client libraries and minor code changes.
 - If you plan to store large amounts of text, be mindful of potential API usage limits or cost.
+
+## Disclaimer
+
+- This project only provides a brief overview of German online laws. It is based on legal documents that may not be fully up to date. Please consult legal professionals before making any decisions.
 
 ## License
 
