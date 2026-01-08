@@ -25,12 +25,36 @@ retriever = Retriever()
 
 def retrieve_articles_tool(query: str, filters: dict = None) -> str:
     """
-    Tool to retrieve relevant legal articles from the vector database.
-    Returns a JSON string of the results.
+    Tool to retrieve relevant legal articles.
+    Accepts a JSON string representing a list of queries (Multi-Query).
+    Returns a JSON string of deduplicated results.
     """
-    print(f"--- Calling Retriever Tool with query: {query} ---")
-    results = retriever.query(query_text=query, top_k=5)
-    return json.dumps(results)
+    print(f"--- Calling Retriever Tool ---")
+    try:
+        queries = json.loads(query)
+        if not isinstance(queries, list):
+            queries = [query]
+    except:
+        queries = [query]
+        
+    all_results = {}
+    
+    for q in queries:
+        print(f"  > Searching for: {q}")
+        results = retriever.query(query_text=q, top_k=3) # Reduce k per query to avoid noise
+        for doc in results:
+            # Use link or content hash as unique key
+            doc_id = doc.get('metadata', {}).get('link', doc.get('id'))
+            if doc_id and doc_id not in all_results:
+                all_results[doc_id] = doc
+            else:
+                # Optional: Reciprocal Rank Fusion could go here.
+                # For now, we just keep the first occurrence (highest score usually).
+                pass
+                
+    final_results = list(all_results.values())
+    print(f"  > Total unique documents found: {len(final_results)}")
+    return json.dumps(final_results)
 
 # 3. Create the LLM
 settings = Settings()
@@ -88,16 +112,49 @@ def router_node(state: AgentState):
 
 def tool_decision_node(state: AgentState):
     """
-    If intent is legal_query, constructs the tool call.
+    Analyzes the user's query and generates optimized German search queries.
+    Uses Chain-of-Thought (COT) and Multi-Query Expansion.
     """
-    print("--- Tool Decision Node ---")
+    print("--- Tool Decision Node (Query Expansion) ---")
     messages = state['messages']
     last_message = messages[-1]
     
-    # We construct the tool call manually for the retriever
+    # COT + Multi-Query Prompt
+    prompt = (
+        f"You are an expert German legal researcher. Your goal is to retrieve the most relevant sections from the BGB (German Civil Code) for the user's query.\n"
+        f"User Query: {last_message.content}\n\n"
+        f"**Task:**\n"
+        f"1. **Analyze**: Briefly think step-by-step about the legal concepts, German terminology, and potential relevant statutes involved.\n"
+        f"2. **Generate Queries**: Create 3 distinct search queries in **German**.\n"
+        f"   - Query 1: Specific legal keywords or statute numbers (e.g., 'Testament Formvorschriften BGB').\n"
+        f"   - Query 2: Natural language description of the legal issue in German.\n"
+        f"   - Query 3: Broad conceptual terms or synonyms.\n\n"
+        f"**Output Format:**\n"
+        f"Provide ONLY a JSON list of strings. Do not output the analysis text, just the JSON.\n"
+        f"Example: [\"Query 1\", \"Query 2\", \"Query 3\"]"
+    )
+    
+    try:
+        response = llm.generate_response(prompt).strip()
+        # Clean up potential markdown code blocks
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0]
+        elif "```" in response:
+            response = response.split("```")[1].split("```")[0]
+            
+        queries = json.loads(response)
+        if not isinstance(queries, list):
+            raise ValueError("Output is not a list")
+    except Exception as e:
+        print(f"!! Query Expansion Failed: {e}. Fallback to original query.")
+        queries = [last_message.content]
+
+    print(f"--- Generated Queries: {queries} ---")
+
+    # Pass the list of queries as a JSON string to the tool
     tool_call = {
         "name": "retrieve_articles_tool",
-        "args": {"query": last_message.content},
+        "args": {"query": json.dumps(queries)}, # Passing list as JSON string
         "id": "1",
     }
     return {
