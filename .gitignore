@@ -166,3 +166,14 @@ cython_debug/
 
 .vscode/
 archive/
+# AI Context Files
+GEMINI.md
+CLAUDE.md
+
+# Temporary Utility Scripts
+seed_test_data.py
+recreate_index.py
+list_models.py
+check_pinecone.py
+create_new_index.py
+update_env.py
