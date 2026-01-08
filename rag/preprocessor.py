@@ -8,7 +8,7 @@ class Preprocessor:
     預處理模組：負責文本分段與嵌入
     """
 
-    def __init__(self, embedding_api: BaseLLMAPI, chunk_size: int = 512, chunk_overlap: int = 128):
+    def __init__(self, embedding_api: BaseLLMAPI, chunk_size: int = 1024, chunk_overlap: int = 200):
         """
         初始化預處理模組
         :param embedding_api: 實現 BaseEmbeddingAPI 的嵌入 API

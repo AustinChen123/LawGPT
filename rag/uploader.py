@@ -87,15 +87,10 @@ class Uploader:
     def upload_section(self, main_topic: str, section: dict, vector: list, index: int):
         """
         上傳單個 section 到 Pinecone
-        :param main_topic: 主題名稱
-        :param section: 要上傳的 section 資料
-        :param vector: 嵌入向量
-        :param index: section 的序號
         """
-        # 構建上傳資料
         ID = generate_ascii_id(main_topic, index)
         item = {
-            "id": ID,  # 使用主題名稱和序號作為唯一 ID
+            "id": ID,
             "values": vector,
             "metadata": {
                 "main_topic": main_topic,
@@ -104,8 +99,17 @@ class Uploader:
                 "link": section["link"] if section["link"] else ""
             }
         }
-        # 執行上傳
         self.index.upsert(vectors=[item])
+
+    def upload_batch(self, vectors: list):
+        """
+        批量上傳向量到 Pinecone
+        :param vectors: 符合 Pinecone 格式的向量列表 [{"id":..., "values":..., "metadata":...}]
+        """
+        if not vectors:
+            return
+        # Pinecone recommendation is to upload in batches of 100
+        self.index.upsert(vectors=vectors)
 
     # def upload_all(self, main_topic: str, sections: list, vectors: list):
     #     """

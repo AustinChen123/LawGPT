@@ -1,43 +1,16 @@
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
+from tenacity import retry, wait_exponential, stop_after_attempt
 
 
-def html_extraction_de(base_url: pd.DataFrame) -> dict:
+@retry(wait=wait_exponential(multiplier=1, min=4, max=10), stop=stop_after_attempt(3))
+def html_extraction_de(base_url: str) -> list:
     """
-    This function will extract certain inforamtion from the gesetze website.
-    The function will return a list of dictionary as follows:
-    [
-    {"section": first section detail,
-    "content": law content,
-    "link": link to the specific paragraph(by id)},
-    {"section": second section detail,
-    "content": law content,
-    "link": link to the specific paragraph(by id)}
-    ]
-    For example:
-    Given the url:
-    https://www.gesetze-im-internet.de/englisch_abgg/englisch_abgg.html
-
-    the element could be:
-
-    <p style="text-align: center; font-weight: bold"><a name="p0017"><!----></a>Section 2<br>Protection of the free exercise of an electoral mandate</p>
-    <p><a name="p0018"><!----></a>(1) No one may be prevented from standing as a candidate for a mandate to serve as a Member of the Bundestag or from acquiring, accepting or holding such a mandate.</p>
-    <p><a name="p0019"><!----></a>(2) Discrimination at work on the grounds of candidature for or acquisition, acceptance and exercise of a mandate shall be inadmissible.</p>
-
-    The first paragraph is section and section detail.
-    The second paragraph is the law content.
-    The third paragraph is the law content of the same section of second paragraph.
-
-    And the function will return:
-    [
-    {'section': 'Section 2:Protection of the free exercise of an electoral mandate',
-    'content': '(1) No one may be prevented from standing as a candidate for a mandate to serve as a Member of the Bundestag or from acquiring, accepting or holding such a mandate. (2) Discrimination at work on the grounds of candidature for or acquisition, acceptance and exercise of a mandate shall be inadmissible. (3) Termination of an employment contract or dismissal on grounds of the acquisition, acceptance or exercise of a mandate shall be inadmissible. In all other respects, termination of an employment contract shall only be permitted for a compelling reason. Protection against termination or dismissal shall take effect on the selection of the candidate by the relevant party organ or on submission of the list of nominated candidates. It shall continue to apply for one year after the end of the Member’s term of office.',
-    'link': 'https://www.gesetze-im-internet.de/englisch_abgg/englisch_abgg.html#p0017'},
-    ]
+    Enhanced extraction with retry logic and status checks.
     """
-
-    response = requests.get(base_url)
+    response = requests.get(base_url, timeout=15)
+    response.raise_for_status() # Raise error for 4xx/5xx responses
     soup = BeautifulSoup(response.content, 'html.parser')
 
     # 尋找所有包含 "jnnorm" class 的 div 標籤，這裡是每個法條的主要容器

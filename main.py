@@ -76,6 +76,8 @@ def main():
                     # 逐筆處理每個 section
                     main_topic = data.get('main_topic', 'Unknown')
                     prev_index = 0
+                    batch_vectors = []
+                    
                     for sec_id, section_data in enumerate(data.get('sections', [])):
                         section = section_data.get('section', '')
                         content = section_data.get('content', '')
@@ -87,26 +89,42 @@ def main():
                             i += 1
                             continue
 
-                        # 嵌入並逐筆上傳
+                        # 嵌入並分塊
                         processed_data = preprocessor.process_text(content)
                         for chunk_index, item in enumerate(processed_data):
-                            uploader.upload_section(
-                                main_topic=main_topic,
-                                section={
-                                    "section": section,
-                                    "link": link,
+                            # 生成符合 Pinecone 格式的物件
+                            from rag.uploader import generate_ascii_id
+                            vector_id = generate_ascii_id(main_topic, prev_index)
+                            
+                            vector_item = {
+                                "id": vector_id,
+                                "values": item["embedding"],
+                                "metadata": {
+                                    "main_topic": main_topic,
+                                    "section_title": section,
                                     "content": item["chunk"],
+                                    "link": link,
                                     "filename": filename
-                                },
-                                vector=item["embedding"],
-                                index=prev_index
-                            )
-                            print(
-                                f"[INFO] -- Finished upload: {filename} -> Section: {section} -> Chunk: {chunk_index+1}")
+                                }
+                            }
+                            batch_vectors.append(vector_item)
+                            
+                            # 當 Batch 滿 100 就上傳
+                            if len(batch_vectors) >= 100:
+                                uploader.upload_batch(batch_vectors)
+                                print(f"[INFO] Batch upload complete ({len(batch_vectors)} vectors)")
+                                batch_vectors = []
+                                
                             prev_index += 1
+                        
                         i += 1
                         uploader.save_progress(i)
-                        time.sleep(60/1500)
+                        time.sleep(0.01) # Small delay to avoid API burst limits
+                    
+                    # 上傳該檔案剩餘的向量
+                    if batch_vectors:
+                        uploader.upload_batch(batch_vectors)
+                        print(f"[INFO] Final batch for {filename} uploaded.")
 
     # **3. RAG 流程**
     if args.rag or not (args.crawl or args.embedding):
