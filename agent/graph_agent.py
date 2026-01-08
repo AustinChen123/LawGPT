@@ -40,33 +40,50 @@ llm = GeminiLLMAPI(api_key=settings.GOOGLE_API_KEY, model="gemini-flash-latest")
 
 def router_node(state: AgentState):
     """
-    Classifies the user's intent to decide whether to use tools or answer directly.
+    Classifies the user's intent using a Hybrid Strategy (Keywords + LLM).
+    Bias: High Recall for legal queries (Safety First).
     """
     print("--- Router Node ---")
     messages = state['messages']
     last_message = messages[-1]
+    content = last_message.content.lower()
     
-    # Simple prompt-based classification
-    # In a production system, this could be a specialized smaller model or a fine-tuned classifier.
+    # 1. Hard Rule: Keyword Guardrails
+    # If these exist, we force a search to avoid LLM missing obvious legal references.
+    legal_keywords = [
+        "§", "bgb", "law", "legal", "contract", "agreement", "sue", "court", 
+        "judge", "lawyer", "attorney", "recht", "gesetz", "vertrag", "anwalt",
+        "paragraf", "article", "regulation", "statute", "rule", "complaint"
+    ]
+    
+    if any(k in content for k in legal_keywords):
+        print("--- Intent Detected: legal_query (Keyword Trigger) ---")
+        return {"intent": "legal_query"}
+    
+    # 2. LLM Check (Conservative Classification)
     prompt = (
-        f"Classify the following user query into one of two categories:\n"
-        f"1. 'legal_query': The user is asking about laws, regulations, legal definitions, or legal advice (especially German law).\n"
-        f"2. 'general_chat': The user is greeting, asking about general knowledge (e.g., cooking, weather), or making small talk.\n\n"
+        f"You are a sophisticated intent classifier for a legal assistant.\n"
+        f"Classify the User Query into 'legal_query' or 'general_chat'.\n\n"
+        f"**Guidelines:**\n"
+        f"- **legal_query**: ANY question about rights, obligations, rules, regulations, crimes, debts, family issues, work disputes, or definitions of terms. \n"
+        f"  *CRITICAL*: If you are unsure, or if the query vaguely touches on a real-world conflict (e.g., 'neighbor issue', 'broken item'), classify as 'legal_query'. **Err on the side of searching.**\n"
+        f"- **general_chat**: Pure greetings ('hi', 'hello'), thanks, or questions about completely non-legal topics (e.g., 'weather', 'recipe', 'poem').\n\n"
         f"User Query: {last_message.content}\n\n"
-        f"Output ONLY the category name ('legal_query' or 'general_chat')."
+        f"Output ONLY the category name."
     )
     
     try:
         intent = llm.generate_response(prompt).strip().lower()
-        # Fallback if model outputs extra text
+        # Clean up response
         if "legal" in intent:
             intent = "legal_query"
         else:
             intent = "general_chat"
     except:
-        intent = "legal_query" # Default to legal query on error
+        # Failsafe: If LLM fails, assume it's a query to be safe
+        intent = "legal_query" 
         
-    print(f"--- Intent Detected: {intent} ---")
+    print(f"--- Intent Detected: {intent} (LLM Decision) ---")
     return {"intent": intent}
 
 def tool_decision_node(state: AgentState):
