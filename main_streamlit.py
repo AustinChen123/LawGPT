@@ -1,107 +1,132 @@
-import sys
-import os
-import time
-from config.settings import Settings
-from rag.gemini_api import GeminiEmbeddingAPI, GeminiLLMAPI
-from pinecone import Pinecone
 import streamlit as st
+import os
+from config.settings import Settings
+from rag.gemini_api import GeminiLLMAPI
+from rag.retriever import Retriever
+from PIL import Image
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
+# Page Config
+st.set_page_config(page_title="LawGPT - Agentic Legal Assistant", page_icon="⚖️", layout="wide")
 
 def main():
     settings = Settings()
 
-    st.title("LawGPT with Streamlit")
-
-    # 1. 初始化 Pinecone
-    pc = Pinecone(api_key=settings.PINECONE_API_KEY)
-    index = pc.Index(
-        host=settings.PINECONE_HOST)
-
-    # 2. 初始化 LLM & Embedding
-    llm = GeminiLLMAPI(
-        api_key=settings.GOOGLE_API_KEY,
-        model="models/gemini-2.0-flash-exp",
-        system_instruction=(
-            "You are a law advisor. We will provide relevant material to the questions, "
-            "please answer based on the documents and following the instructions. "
-            "Don't do extra inference if the documents don't specify. "
-            "Don't talk too much about how you search the documents, but saying 'consult professional lawyers'. "
-            "Don't say 'from documents' but directly answer the question with the information provided. "
-            "Also specify which law you are referencing."
-            "Make sure you mention a disclaimer after each conversation."
+    # Sidebar Configuration
+    with st.sidebar:
+        st.title("⚙️ Settings")
+        user_language = st.selectbox(
+            "Response Language (回覆語言)", 
+            ["zh-tw", "en", "de"], 
+            index=0,
+            help="Choose the language you want the assistant to reply in."
         )
-    )
-    embedding_api = GeminiEmbeddingAPI(settings.GOOGLE_API_KEY)
+        st.divider()
+        st.markdown("### Multimodal Capabilities")
+        st.write("You can upload images of legal documents for analysis.")
+        st.divider()
+        st.markdown("Powered by **LawGPT**")
 
-    # 3. Streamlit互動參數：語言選擇 & 問題輸入
-    user_language = st.selectbox("Select answer language:", [
-                                    "de", "en", "zh", "zh-tw"], index=0)
-    user_input = st.text_input("Please enter your question:")
+    # Main Interface
+    st.title("⚖️ LawGPT: German Law Assistant")
+    st.caption("Ask anything about German Statutory Law. Input can be in any language.")
 
-    # 4. 當使用者按下「Send」按鈕，開始RAG流程
-    if st.button("Send"):
-        if not user_input.strip():
-            st.warning("Please enter your question first.")
-            st.stop()
-
-        # (a) 翻譯使用者問題到目標語言 (以de為例，你可換成 user_language )
-        translation_prompt = (
-            f"Translate the following text to de:\n\n"
-            f"{user_input}\n\n"
-            "Only provide the translated text in de."
-        )
-        translated_input = llm.generate_response(translation_prompt)
-
-        time.sleep(0.1)  # 模擬呼叫API延遲
-
-        # 嵌入
-        vector = embedding_api.embed_text(translated_input)
-
-        # (b) Query Engine 查詢
-        response = index.query(
-            vector=vector,
-            top_k=10,
-            include_values=True,
-            include_metadata=True
+    # Initialize components (Cached to avoid reloading)
+    if "retriever" not in st.session_state:
+        st.session_state.retriever = Retriever()
+    if "llm" not in st.session_state:
+        st.session_state.llm = GeminiLLMAPI(
+            api_key=settings.GOOGLE_API_KEY,
+            model="gemini-flash-latest",
+            system_instruction=(
+                "You are an expert German legal advisor. "
+                "Your primary knowledge source is the German Civil Code (BGB). "
+                "Regardless of the input language, you MUST respond in the language specified by the user in the prompt."
+            )
         )
 
-        # (c) 解析 Pinecone 查詢結果
-        matches = response.get("matches", [])
-        retrieved_text = ""
-        links = []
-        for match in matches:
-            meta = match.get("metadata", {})
-            chunk_content = meta.get("content", "")
-            links.append(meta.get("link", ""))
-            retrieved_text += chunk_content + "\n"
+    # Initialize Chat History
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant", "content": "Hello! I am LawGPT. I can help you with German legal questions (BGB). You can also upload a document image for me to analyze."}
+        ]
 
-        # (d) 最終翻譯回答回原語言
-        answer_translation_prompt = (
-            f"Translate the following text to the same language as the user's original question.\n\n"
-            f"User's Original Question:\n{user_input}\n\n"
-            f"Supporting documents:\n{retrieved_text}\n\n"
-            f"Only provide the answer related to the question in {user_language}."
-        )
-        translated_answer = llm.generate_response(
-            answer_translation_prompt)
+    # Display Chat History
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if "image" in msg:
+                st.image(msg["image"], caption="Uploaded Image", use_column_width=True)
 
-        # 5. 在Streamlit介面上輸出結果
-        output_data = {
-            "Original Question": user_input,
-            "Translated Question": translated_input,
-            "Translated Answer": translated_answer
-        }
+    # Input Area
+    prompt = st.chat_input("Ask a legal question...")
+    uploaded_file = st.file_uploader("Upload an image (optional)", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
 
-        for key, value in output_data.items():
-            st.markdown(f"**{key}**: {value}")
+    if prompt:
+        # 1. Handle User Input
+        user_msg_content = prompt
+        user_image = None
+        
+        if uploaded_file:
+            user_image = Image.open(uploaded_file)
+            st.session_state.messages.append({"role": "user", "content": prompt, "image": user_image})
+        else:
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            if user_image:
+                st.image(user_image, caption="Uploaded Image", use_column_width=True)
 
-        st.markdown("#### Links from metadata:")
-        for link in links:
-            if link:
-                st.write(f"- {link}")
+        # 2. RAG Retrieval (Text only)
+        # We retrieve context based on the text prompt
+        with st.spinner("Searching legal database..."):
+            retrieved_docs = st.session_state.retriever.query(prompt, top_k=5)
+            
+        # Format context
+        context_str = ""
+        citation_links = []
+        for doc in retrieved_docs:
+            meta = doc.get("metadata", {})
+            content = meta.get("content", "")
+            link = meta.get("link", "")
+            context_str += f"Source ({link}):\n{content}\n\n"
+            if link not in citation_links:
+                citation_links.append(link)
 
+        # 3. Generate Answer
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                full_prompt = (
+                    f"STRICT INSTRUCTION: Respond only in the following language: {user_language}\n\n"
+                    f"User Question: {prompt}\n\n"
+                    f"Retrieved Legal Context (German Statutes):\n{context_str}\n\n"
+                    f"Task: Analyze the user's question and any provided image based on the legal context. "
+                    f"Provide a detailed answer strictly in {user_language}. "
+                    "Cite relevant paragraphs (e.g., § 123 BGB) clearly."
+                )
+                
+                try:
+                    # Call LLM with text + image (if any)
+                    response_text = st.session_state.llm.generate_response(
+                        prompt=full_prompt,
+                        images=[user_image] if user_image else None
+                    )
+                    
+                    st.markdown(response_text)
+                    
+                    # Display Sources
+                    if citation_links:
+                        st.markdown("---")
+                        st.markdown("**References:**")
+                        for link in citation_links:
+                            st.markdown(f"- [{link}]({link})")
+                            
+                    # Save to history
+                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    
+                except Exception as e:
+                    error_msg = f"Sorry, I encountered an error: {str(e)}"
+                    st.error(error_msg)
 
 if __name__ == "__main__":
     main()

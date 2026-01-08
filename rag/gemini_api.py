@@ -46,15 +46,23 @@ class GeminiLLMAPI(BaseLLMAPI):
         self.model = model.replace("models/", "") 
         self.system_instruction = system_instruction
 
-    def generate_response(self, prompt) -> str:
+    def generate_response(self, prompt, images=None) -> str:
         """
-        Generate response based on context and question
+        Generate response based on context and question, optionally with images.
         :param prompt: User prompt
+        :param images: Optional image or list of images (PIL.Image or bytes)
         :return: Generated response text
         """
+        contents = [prompt]
+        if images:
+            if isinstance(images, list):
+                contents.extend(images)
+            else:
+                contents.append(images)
+
         response = self.client.models.generate_content(
             model=self.model,
-            contents=prompt,
+            contents=contents,
             config={"system_instruction": self.system_instruction}
         )
         return response.text
