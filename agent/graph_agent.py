@@ -1,6 +1,6 @@
 import operator
 import json
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated, Sequence, TypedDict, Literal
 
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -15,16 +15,12 @@ from rag.retriever import Retriever
 class AgentState(TypedDict):
     """
     Represents the state of our agent.
-
-    Attributes:
-        messages: The history of messages in the conversation.
-        documents: A list of retrieved documents.
     """
     messages: Annotated[Sequence[BaseMessage], operator.add]
     documents: Annotated[list[dict], operator.add]
+    intent: str # 'legal_query' or 'general_chat'
 
 # 2. Define the tools
-# We'll start with just the retriever tool.
 retriever = Retriever()
 
 def retrieve_articles_tool(query: str, filters: dict = None) -> str:
@@ -41,78 +37,112 @@ settings = Settings()
 llm = GeminiLLMAPI(api_key=settings.GOOGLE_API_KEY, model="gemini-flash-latest")
 
 # 4. Define the nodes
-def agent_node(state):
+
+def router_node(state: AgentState):
     """
-    The primary node that decides what to do. It can either call a tool or respond to the user.
+    Classifies the user's intent to decide whether to use tools or answer directly.
     """
-    print("--- Agent Node ---")
+    print("--- Router Node ---")
     messages = state['messages']
     last_message = messages[-1]
     
-    # This is a simplified agent. We are manually creating the tool call.
-    # A real agent would use an LLM with tool-calling capabilities to generate this.
+    # Simple prompt-based classification
+    # In a production system, this could be a specialized smaller model or a fine-tuned classifier.
+    prompt = (
+        f"Classify the following user query into one of two categories:\n"
+        f"1. 'legal_query': The user is asking about laws, regulations, legal definitions, or legal advice (especially German law).\n"
+        f"2. 'general_chat': The user is greeting, asking about general knowledge (e.g., cooking, weather), or making small talk.\n\n"
+        f"User Query: {last_message.content}\n\n"
+        f"Output ONLY the category name ('legal_query' or 'general_chat')."
+    )
     
-    # We only want to trigger the tool if it hasn't been called yet.
-    # Check if the last message is from Human.
-    if isinstance(last_message, HumanMessage):
-        tool_call = {
-            "name": "retrieve_articles_tool",
-            "args": {"query": last_message.content},
-            "id": "1", # A unique ID for the tool call
-        }
-        return {
-            "messages": [
-                AIMessage(content="", tool_calls=[tool_call])
-            ]
-        }
-    
-    # If we are here, it means we probably have tool outputs or other things.
-    # But in this simple graph, we go Agent -> Tools -> Generator.
-    # So Agent only needs to output the tool call.
-    return {"messages": []}
+    try:
+        intent = llm.generate_response(prompt).strip().lower()
+        # Fallback if model outputs extra text
+        if "legal" in intent:
+            intent = "legal_query"
+        else:
+            intent = "general_chat"
+    except:
+        intent = "legal_query" # Default to legal query on error
+        
+    print(f"--- Intent Detected: {intent} ---")
+    return {"intent": intent}
 
-def generation_node(state):
+def tool_decision_node(state: AgentState):
     """
-    Generates a final answer to the user based on the retrieved documents.
+    If intent is legal_query, constructs the tool call.
+    """
+    print("--- Tool Decision Node ---")
+    messages = state['messages']
+    last_message = messages[-1]
+    
+    # We construct the tool call manually for the retriever
+    tool_call = {
+        "name": "retrieve_articles_tool",
+        "args": {"query": last_message.content},
+        "id": "1",
+    }
+    return {
+        "messages": [AIMessage(content="", tool_calls=[tool_call])]
+    }
+
+def generation_node(state: AgentState):
+    """
+    Generates a final answer. 
+    It handles both cases: with retrieved docs (legal) or without (general).
     """
     print("--- Generation Node ---")
     messages = state['messages']
+    intent = state.get('intent', 'general_chat')
     
-    # Find tool messages
+    # Find tool messages to extract docs
     tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
     
     new_documents = []
     for msg in tool_messages:
         try:
-            # content is a JSON string
             docs = json.loads(msg.content)
             if isinstance(docs, list):
                 new_documents.extend(docs)
         except:
             pass
 
-    # Construct a prompt for the generation model
-    # Find the original human question
-    original_question = next(msg.content for msg in messages if isinstance(msg, HumanMessage))
+    # Construct Prompt
+    original_question = next(msg.content for msg in reversed(messages) if isinstance(msg, HumanMessage))
     
-    document_str = "\n\n".join(
-        [f"Citation: {doc['metadata'].get('link', 'N/A')}\nContent: {doc['metadata'].get('content', 'N/A')}" for doc in new_documents]
-    )
+    if intent == "legal_query":
+        if not new_documents:
+            # Fallback if retrieval returned nothing
+            document_str = "No specific legal documents found."
+        else:
+            document_str = "\n\n".join(
+                [f"Citation: {doc['metadata'].get('link', 'N/A')}\nContent: {doc['metadata'].get('content', 'N/A')}" for doc in new_documents]
+            )
 
-    prompt = (
-        f"You are a legal assistant. Your task is to answer the user's question based *only* on the provided legal documents. "
-        f"For every statement you make, you MUST cite the source document.\n\n"
-        f"**User Question:**\n{original_question}\n\n"
-        f"**Legal Documents:**\n{document_str}\n\n"
-        f"**Instructions:**\n"
-        f"1. Answer the question using ONLY the information above.\n"
-        f"2. Cite the source for every claim (e.g., [Source 1], BGB § 123).\n"
-        f"3. If the provided documents are NOT relevant to the user's question (e.g., a recipe question vs a legal document), "
-        f"state clearly that you cannot answer based on the available legal texts. "
-        f"Do NOT summarize the irrelevant document and do NOT cite it in this case.\n"
-        f"4. Do NOT include a disclaimer at the end. The user interface will handle the legal disclaimer automatically.\n\n"
-        f"**Answer (with citations):**"
-    )
+        prompt = (
+            f"You are a legal assistant. Answer based *only* on the provided documents.\n\n"
+            f"**User Question:**\n{original_question}\n\n"
+            f"**Legal Documents:**\n{document_str}\n\n"
+            f"**Instructions:**\n"
+            f"1. Answer using ONLY the information above.\n"
+            f"2. Cite the source for every claim.\n"
+            f"3. If documents are irrelevant/empty, state you cannot answer based on available texts.\n"
+            f"4. Do NOT include a disclaimer.\n\n"
+            f"**Answer:**"
+        )
+    else:
+        # General Chat Prompt
+        prompt = (
+            f"You are LawGPT, a helpful assistant. The user is engaging in general conversation.\n"
+            f"**User Input:** {original_question}\n\n"
+            f"**Instructions:**\n"
+            f"1. Respond politely and helpfully.\n"
+            f"2. If the user asks for legal advice, kindly remind them you specialize in German Law and they should ask a specific legal question.\n"
+            f"3. Do NOT invent legal advice.\n"
+            f"4. Do NOT include a disclaimer.\n\n"
+            f"**Response:**"
+        )
 
     try:
         response_text = llm.generate_response(prompt)
@@ -120,46 +150,80 @@ def generation_node(state):
     except Exception as e:
         error_msg = f"Error generating response: {str(e)}"
         print(f"!! {error_msg}")
-        return {"messages": [AIMessage(content="I apologize, but I encountered an error while communicating with the AI model (likely due to rate limits). Please try again later.")]}
+        return {"messages": [AIMessage(content="System Error: Rate limit or API issue.")]}
 
-# 5. Create the graph
-# The tool node is created using a langgraph helper.
+# 5. Define Conditional Logic
+def route_step(state: AgentState) -> Literal["tools", "generator"]:
+    if state["intent"] == "legal_query":
+        return "tools"
+    return "generator"
+
+# 6. Create the graph
 tool_node = ToolNode([retrieve_articles_tool])
 
 workflow = StateGraph(AgentState)
 
-# Add the nodes
-workflow.add_node("agent", agent_node)
-workflow.add_node("tools", tool_node)
+# Nodes
+workflow.add_node("router", router_node)
+workflow.add_node("tool_decision", tool_decision_node) # Creates the tool call message
+workflow.add_node("tool_execution", tool_node) # Actually executes the tool
 workflow.add_node("generator", generation_node)
 
-# Define the edges
-workflow.set_entry_point("agent")
-workflow.add_edge("agent", "tools")
-workflow.add_edge("tools", "generator") # For now, we go directly to generation
+# Edges
+workflow.set_entry_point("router")
+
+# Router decides: Go to Tool Decision (Legal) or Direct Generation (General)
+workflow.add_conditional_edges(
+    "router",
+    route_step,
+    {
+        "tools": "tool_decision",
+        "generator": "generator"
+    }
+)
+
+# Legal Path: Decision -> Execution -> Generator
+workflow.add_edge("tool_decision", "tool_execution")
+workflow.add_edge("tool_execution", "generator")
+
+# General Path: Router -> Generator (Implicit in conditional edge)
+
 workflow.add_edge("generator", END)
 
-# Compile the graph
+# Compile
 app = workflow.compile()
 
-def main():
-    """
-    Entry point for running the agent.
-    """
-    print("Agentic RAG system starting...")
-
-    # Define the initial state for the conversation
+def run_agent(question: str) -> dict:
+    """Helper for BDD tests"""
     initial_state = {
-        "messages": [HumanMessage(content="What are the requirements for a valid will in Germany?")],
-        "documents": []
+        "messages": [HumanMessage(content=question)],
+        "documents": [],
+        "intent": ""
+    }
+    final_state = app.invoke(initial_state)
+    
+    retrieved_docs = []
+    for msg in final_state['messages']:
+        if isinstance(msg, ToolMessage):
+            try:
+                docs = json.loads(msg.content)
+                if isinstance(docs, list):
+                    retrieved_docs.extend(docs)
+            except:
+                pass
+                
+    return {
+        "answer": final_state['messages'][-1].content,
+        "documents": retrieved_docs
     }
 
-    # Run the graph
-    final_state = app.invoke(initial_state)
-
-    # Print the final response
-    print("\n--- Final Response ---")
-    print(final_state['messages'][-1].content)
+def main():
+    print("Agentic RAG system starting...")
+    res = run_agent("Hello, who are you?")
+    print(f"Q: Hello\nA: {res['answer']}")
+    print("-" * 20)
+    res = run_agent("What is BGB § 2247?")
+    print(f"Q: BGB 2247\nA: {res['answer']}")
 
 if __name__ == "__main__":
     main()
