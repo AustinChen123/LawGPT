@@ -111,6 +111,17 @@ class Uploader:
         # Pinecone recommendation is to upload in batches of 100
         self.index.upsert(vectors=vectors)
 
+    def delete_file_vectors(self, filename: str):
+        """
+        刪除特定檔案的所有向量 (用於更新前的清理)
+        :param filename: 要刪除的檔案名稱 (metadata.filename)
+        """
+        try:
+            self.index.delete(filter={"filename": {"$eq": filename}})
+            print(f"[INFO] Cleared old vectors for {filename}")
+        except Exception as e:
+            print(f"[WARN] Failed to delete old vectors for {filename}: {e}")
+
     # def upload_all(self, main_topic: str, sections: list, vectors: list):
     #     """
     #     上傳所有 sections 和向量

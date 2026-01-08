@@ -86,6 +86,10 @@ def main():
 
                     print(f"[INFO] Processing file: {file_path}")
 
+                    # Clean up old vectors for this file before re-uploading
+                    # This prevents zombie chunks if the new content is shorter than the old content
+                    uploader.delete_file_vectors(filename)
+
                     # 逐筆處理每個 section
                     main_topic = data.get('main_topic', 'Unknown')
                     prev_index = 0
