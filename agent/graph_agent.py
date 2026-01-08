@@ -104,6 +104,13 @@ def generation_node(state):
         f"For every statement you make, you MUST cite the source document.\n\n"
         f"**User Question:**\n{original_question}\n\n"
         f"**Legal Documents:**\n{document_str}\n\n"
+        f"**Instructions:**\n"
+        f"1. Answer the question using ONLY the information above.\n"
+        f"2. Cite the source for every claim (e.g., [Source 1], BGB § 123).\n"
+        f"3. If the provided documents are NOT relevant to the user's question (e.g., a recipe question vs a legal document), "
+        f"state clearly that you cannot answer based on the available legal texts. "
+        f"Do NOT summarize the irrelevant document and do NOT cite it in this case.\n"
+        f"4. Do NOT include a disclaimer at the end. The user interface will handle the legal disclaimer automatically.\n\n"
         f"**Answer (with citations):**"
     )
 
