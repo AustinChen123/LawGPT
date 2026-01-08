@@ -1,56 +1,60 @@
-from google.generativeai import embed_content
+from google.genai import Client
 from rag.base_api import BaseEmbeddingAPI, BaseLLMAPI
 
 
 class GeminiEmbeddingAPI(BaseEmbeddingAPI):
     """
-    使用 Gemini 的嵌入 API 實現
+    Implementation of Embedding API using the new google.genai SDK
     """
 
     def __init__(self, api_key: str):
         """
-        初始化嵌入 API
-        :param api_key: Google Generative AI 的 API Key
+        Initialize the Client
+        :param api_key: Google Gen AI API Key
         """
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
+        self.client = Client(api_key=api_key)
 
     def embed_text(self, text: str) -> list:
         """
-        將文本嵌入為向量
-        :param text: 要嵌入的文本
-        :return: 向量（list of float, 長度 768）
+        Embed text into vector
+        :param text: Text to embed
+        :return: Vector (list of float)
         """
-        result = embed_content(
-            model="models/text-embedding-004",
-            content=text
+        # The new SDK typically uses just the model name, e.g., "text-embedding-004"
+        result = self.client.models.embed_content(
+            model="text-embedding-004",
+            contents=text
         )
-        return result["embedding"]
+        # Accessing the first embedding's values (Native 768 dimension)
+        return result.embeddings[0].values
 
 
 class GeminiLLMAPI(BaseLLMAPI):
     """
-    使用 Gemini 的 LLM API 實現
+    Implementation of LLM API using the new google.genai SDK
     """
 
-    def __init__(self, api_key: str, model: str = "models/gemini-1.5-flash", system_instruction: str = "You are a helpful assistant."):
+    def __init__(self, api_key: str, model: str = "gemini-1.5-flash", system_instruction: str = "You are a helpful assistant."):
         """
-        初始化 LLM API
-        :param model: 使用的 Gemini 模型
-        :param system_instruction: 系統提示，可外部設置
+        Initialize LLM API
+        :param model: Gemini model name
+        :param system_instruction: System prompt
         """
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        self.llm = genai.GenerativeModel(
-            model,
-            system_instruction=system_instruction
-        )
+        self.client = Client(api_key=api_key)
+        # Removing "models/" prefix if present, as new SDK often handles it or prefers without, 
+        # but let's be safe. Actually, let's keep it robust.
+        self.model = model.replace("models/", "") 
+        self.system_instruction = system_instruction
 
     def generate_response(self, prompt) -> str:
         """
-        根據上下文和問題生成回答
-        :param context: 提供的上下文
-        :param question: 用戶的問題
-        :return: 模型生成的回答
+        Generate response based on context and question
+        :param prompt: User prompt
+        :return: Generated response text
         """
-        return self.llm.generate_content(prompt).text
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config={"system_instruction": self.system_instruction}
+        )
+        return response.text
