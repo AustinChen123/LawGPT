@@ -58,20 +58,33 @@ def main():
         # 初始化嵌入與上傳模組
         embedding_api = GeminiEmbeddingAPI(settings.GOOGLE_API_KEY)
         preprocessor = Preprocessor(embedding_api)
-        uploader = Uploader("lawgpt", settings.PINECONE_API_KEY)
-        progress = uploader.load_progress()
-        current_count = progress.get("current_count", 0)
+        uploader = Uploader(settings.INDEX_NAME, settings.PINECONE_API_KEY)
+        
+        # State Manager for Incremental Embedding
+        from crawler.state_manager import StateManager
+        embed_state_manager = StateManager(os.path.join(settings.DATA_FOLDER, "embedding_state.json"))
+        
+        # progress = uploader.load_progress() # Deprecated by state manager
+        # current_count = progress.get("current_count", 0) 
         i = 0
+        
         # 遍歷資料夾處理 JSON 檔案
         for root, dirs, files in os.walk(settings.DATA_FOLDER):
             for filename in files:
-                if filename.endswith('.json'):
+                if filename.endswith('.json') and "state" not in filename: # Ignore state files
                     file_path = os.path.join(root, filename)
-                    print(f"[INFO] Processing file: {file_path}")
-
+                    
                     # 讀取 JSON 檔案
                     with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+                        content_str = f.read()
+                        data = json.loads(content_str)
+
+                    # Check if file has changed
+                    if not embed_state_manager.update_state(filename, content_str):
+                        print(f"[INFO] Skipping {filename} (No changes detected).")
+                        continue
+
+                    print(f"[INFO] Processing file: {file_path}")
 
                     # 逐筆處理每個 section
                     main_topic = data.get('main_topic', 'Unknown')
@@ -82,12 +95,6 @@ def main():
                         section = section_data.get('section', '')
                         content = section_data.get('content', '')
                         link = section_data.get('link', '')
-
-                        if i < current_count:
-                            print(
-                                f"Skipping section {i+1} for '{main_topic}' (already uploaded).")
-                            i += 1
-                            continue
 
                         # 嵌入並分塊
                         processed_data = preprocessor.process_text(content)
@@ -117,8 +124,6 @@ def main():
                                 
                             prev_index += 1
                         
-                        i += 1
-                        uploader.save_progress(i)
                         time.sleep(0.01) # Small delay to avoid API burst limits
                     
                     # 上傳該檔案剩餘的向量
