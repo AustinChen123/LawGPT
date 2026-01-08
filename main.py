@@ -32,10 +32,15 @@ def main():
     args = parser.parse_args()
 
     settings = Settings()
-    user_language = input(
-        "Enter which language you want to use for the answer (en, zh, zh-tw etc.) :")
+    # Provide a default if input is empty
+    try:
+        user_language = input(
+            "Enter which language you want to use for the answer (en, zh, zh-tw etc.) [default: zh-tw]: ")
+    except EOFError:
+        user_language = "zh-tw"
+        
     if user_language == "":
-        user_language = "de"
+        user_language = "zh-tw"
     # **1. 爬蟲過程**
     if args.crawl:
         print("[INFO] Running crawling process...")
