@@ -161,33 +161,78 @@ def tool_decision_node(state: AgentState):
         "messages": [AIMessage(content="", tool_calls=[tool_call])]
     }
 
+def reranker_node(state: AgentState):
+    """
+    Evaluates retrieved documents and filters out irrelevant ones.
+    Ensures high-quality context for the generator.
+    """
+    print("--- Reranker Node ---")
+    messages = state['messages']
+    # Find tool messages to extract docs
+    tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
+    
+    docs = []
+    for msg in tool_messages:
+        try:
+            d = json.loads(msg.content)
+            if isinstance(d, list):
+                docs.extend(d)
+        except:
+            pass
+            
+    if not docs:
+        print("--- No documents to rerank ---")
+        return {"documents": []}
+
+    original_question = next(msg.content for msg in reversed(messages) if isinstance(msg, HumanMessage))
+    
+    # Prompt for LLM-based Reranking/Filtering
+    doc_previews = "\n".join([f"ID: {i} | Title: {d['metadata'].get('section_title')} | Content: {d['metadata'].get('content')[:200]}..." for i, d in enumerate(docs)])
+    
+    prompt = (
+        f"You are a legal expert judge. Your task is to evaluate the relevance of the following retrieved BGB sections to the user's question.\n\n"
+        f"**User Question:** {original_question}\n\n"
+        f"**Retrieved Documents:**\n{doc_previews}\n\n"
+        f"**Task:**\n"
+        f"1. For each document ID, determine if it is 'RELEVANT' or 'IRRELEVANT' to answering the question.\n"
+        f"2. Keep only documents that provide useful legal rules, definitions, or context for this specific case.\n\n"
+        f"**Output Format:**\n"
+        f"Provide a JSON list of IDs that are RELEVANT. Example: [0, 2]\n"
+        f"Output ONLY the JSON list."
+    )
+    
+    try:
+        response = llm.generate_response(prompt).strip()
+        # Clean JSON
+        if "[" in response and "]" in response:
+            response = "[" + response.split("[")[1].split("]")[0] + "]"
+        
+        relevant_ids = json.loads(response)
+        filtered_docs = [docs[i] for i in relevant_ids if i < len(docs)]
+        print(f"--- Reranker: Kept {len(filtered_docs)} out of {len(docs)} documents ---")
+        return {"documents": filtered_docs}
+    except Exception as e:
+        print(f"!! Reranker failed: {e}. Keeping all docs.")
+        return {"documents": docs}
+
 def generation_node(state: AgentState):
     """
     Generates a final answer. 
-    It handles both cases: with retrieved docs (legal) or without (general).
+    Uses the filtered documents from the 'documents' state field.
     """
     print("--- Generation Node ---")
     messages = state['messages']
     intent = state.get('intent', 'general_chat')
     
-    # Find tool messages to extract docs
-    tool_messages = [msg for msg in messages if isinstance(msg, ToolMessage)]
-    
-    new_documents = []
-    for msg in tool_messages:
-        try:
-            docs = json.loads(msg.content)
-            if isinstance(docs, list):
-                new_documents.extend(docs)
-        except:
-            pass
+    # Use the docs from state['documents'] (populated by reranker)
+    # instead of re-parsing tool messages
+    new_documents = state.get('documents', [])
 
     # Construct Prompt
     original_question = next(msg.content for msg in reversed(messages) if isinstance(msg, HumanMessage))
     
     if intent == "legal_query":
         if not new_documents:
-            # Fallback if retrieval returned nothing
             document_str = "No specific legal documents found."
         else:
             document_str = "\n\n".join(
@@ -206,7 +251,7 @@ def generation_node(state: AgentState):
             f"**Answer:**"
         )
     else:
-        # General Chat Prompt
+        # (General chat logic stays same...)
         prompt = (
             f"You are LawGPT, a helpful assistant. The user is engaging in general conversation.\n"
             f"**User Input:** {original_question}\n\n"
@@ -239,14 +284,14 @@ workflow = StateGraph(AgentState)
 
 # Nodes
 workflow.add_node("router", router_node)
-workflow.add_node("tool_decision", tool_decision_node) # Creates the tool call message
-workflow.add_node("tool_execution", tool_node) # Actually executes the tool
+workflow.add_node("tool_decision", tool_decision_node)
+workflow.add_node("tool_execution", tool_node)
+workflow.add_node("reranker", reranker_node)
 workflow.add_node("generator", generation_node)
 
 # Edges
 workflow.set_entry_point("router")
 
-# Router decides: Go to Tool Decision (Legal) or Direct Generation (General)
 workflow.add_conditional_edges(
     "router",
     route_step,
@@ -256,11 +301,9 @@ workflow.add_conditional_edges(
     }
 )
 
-# Legal Path: Decision -> Execution -> Generator
 workflow.add_edge("tool_decision", "tool_execution")
-workflow.add_edge("tool_execution", "generator")
-
-# General Path: Router -> Generator (Implicit in conditional edge)
+workflow.add_edge("tool_execution", "reranker")
+workflow.add_edge("reranker", "generator")
 
 workflow.add_edge("generator", END)
 
