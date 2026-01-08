@@ -8,6 +8,7 @@ from rag.retriever import Retriever
 from PIL import Image
 from agent.graph_agent import app # Import the compiled LangGraph
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from utils.storage import load_sessions, save_sessions
 
 # Disclaimer Dictionary
 DISCLAIMERS = {
@@ -22,15 +23,23 @@ st.set_page_config(page_title="LawGPT - Agentic Legal Assistant", page_icon="⚖
 def init_session():
     """Initialize session state for chat history"""
     if "sessions" not in st.session_state:
-        # Structure: { session_id: { "title": "...", "messages": [...] } }
-        initial_id = str(uuid.uuid4())
-        st.session_state.sessions = {
-            initial_id: {
-                "title": "New Chat", 
-                "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
+        # Try loading from disk
+        loaded = load_sessions()
+        if loaded:
+            st.session_state.sessions = loaded
+            # Default to the first session key found
+            st.session_state.current_session_id = list(loaded.keys())[0]
+        else:
+            # Default initialization
+            initial_id = str(uuid.uuid4())
+            st.session_state.sessions = {
+                initial_id: {
+                    "title": "New Chat", 
+                    "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
+                }
             }
-        }
-        st.session_state.current_session_id = initial_id
+            st.session_state.current_session_id = initial_id
+            save_sessions(st.session_state.sessions)
 
 def create_new_chat():
     """Callback to create a new chat session"""
@@ -40,6 +49,7 @@ def create_new_chat():
         "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
     }
     st.session_state.current_session_id = new_id
+    save_sessions(st.session_state.sessions)
 
 def delete_chat(session_id):
     """Callback to delete a chat session"""
@@ -53,6 +63,7 @@ def delete_chat(session_id):
             "title": "New Chat", 
             "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
         }
+    save_sessions(st.session_state.sessions)
 
 def main():
     settings = Settings()
@@ -72,15 +83,7 @@ def main():
         # 2. History / Session Selector
         st.markdown("**Chat History**")
         
-        # Sort sessions by newest first (reverse logic requires tracking timestamps, 
-        # but for now we just list them. Using standard dict order).
-        # We need a list of IDs to iterate
         session_ids = list(st.session_state.sessions.keys())
-        
-        # Display sessions as buttons or radio (Radio is better for state selection)
-        # To make it look like a list of buttons, we use a radio with custom formatting or just buttons.
-        # Let's use a radio for simplicity in logic, but formatted nicely.
-        
         session_titles = [st.session_state.sessions[sid]["title"] for sid in session_ids]
         
         # Find index of current session
@@ -98,14 +101,6 @@ def main():
             label_visibility="collapsed"
         )
         
-        # Sync selection back to ID (Find title back to ID is risky if duplicates, but okay for this prototype. 
-        # Better: match by index)
-        # We find the index of the selected title in the titles list
-        # Note: This is imperfect if titles are identical. 
-        # Ideally Streamlit's key system handles this, but radio returns the value.
-        # Let's assume user clicks the radio.
-        
-        # Hack to map title back to ID accurately: Use formatting
         selected_index = session_titles.index(selected_title)
         st.session_state.current_session_id = session_ids[selected_index]
 
@@ -163,21 +158,23 @@ def main():
     if prompt:
         # 1. Update Title (if first user message)
         if current_session["title"] == "New Chat":
-            # Truncate prompt for title
             new_title = prompt[:20] + "..." if len(prompt) > 20 else prompt
             current_session["title"] = new_title
-            # We don't rerun here to avoid interrupting flow, title updates next render
+            # Save title update
+            save_sessions(st.session_state.sessions)
 
         # 2. Handle User Input
         user_image = None
         if uploaded_file:
             user_image = Image.open(uploaded_file)
             messages.append({"role": "user", "content": prompt, "image": user_image})
+            save_sessions(st.session_state.sessions) # Save input
             with st.chat_message("user"):
                 st.markdown(prompt)
                 st.image(user_image, caption="Uploaded Image", use_column_width=True)
         else:
             messages.append({"role": "user", "content": prompt})
+            save_sessions(st.session_state.sessions) # Save input
             with st.chat_message("user"):
                 st.markdown(prompt)
 
@@ -255,6 +252,7 @@ def main():
 
                     # Save to Session
                     messages.append({"role": "assistant", "content": response_text})
+                    save_sessions(st.session_state.sessions) # Save response
                     
                 except Exception as e:
                     error_msg = f"Error: {str(e)}"
