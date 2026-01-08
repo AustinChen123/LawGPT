@@ -1,12 +1,13 @@
 import streamlit as st
 import os
+import uuid
+import json
 from config.settings import Settings
 from rag.gemini_api import GeminiLLMAPI
 from rag.retriever import Retriever
 from PIL import Image
 from agent.graph_agent import app # Import the compiled LangGraph
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-import json
 
 # Disclaimer Dictionary
 DISCLAIMERS = {
@@ -18,116 +19,195 @@ DISCLAIMERS = {
 # Page Config
 st.set_page_config(page_title="LawGPT - Agentic Legal Assistant", page_icon="⚖️", layout="wide")
 
+def init_session():
+    """Initialize session state for chat history"""
+    if "sessions" not in st.session_state:
+        # Structure: { session_id: { "title": "...", "messages": [...] } }
+        initial_id = str(uuid.uuid4())
+        st.session_state.sessions = {
+            initial_id: {
+                "title": "New Chat", 
+                "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
+            }
+        }
+        st.session_state.current_session_id = initial_id
+
+def create_new_chat():
+    """Callback to create a new chat session"""
+    new_id = str(uuid.uuid4())
+    st.session_state.sessions[new_id] = {
+        "title": "New Chat", 
+        "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
+    }
+    st.session_state.current_session_id = new_id
+
+def delete_chat(session_id):
+    """Callback to delete a chat session"""
+    if len(st.session_state.sessions) > 1:
+        del st.session_state.sessions[session_id]
+        # Switch to the first available session
+        st.session_state.current_session_id = list(st.session_state.sessions.keys())[0]
+    else:
+        # If it's the last one, just reset it
+        st.session_state.sessions[session_id] = {
+            "title": "New Chat", 
+            "messages": [{"role": "assistant", "content": "Hello! I am LawGPT. Ask me about German Law (BGB)."}]
+        }
+
 def main():
     settings = Settings()
+    init_session()
 
-    # Sidebar Configuration
+    # --- Sidebar Configuration ---
     with st.sidebar:
-        st.title("⚙️ Settings")
+        st.title("⚖️ LawGPT")
+        
+        # 1. New Chat Button
+        if st.button("➕ New Chat", use_container_width=True):
+            create_new_chat()
+            st.rerun() # Force rerun to update UI immediately
+
+        st.divider()
+
+        # 2. History / Session Selector
+        st.markdown("**Chat History**")
+        
+        # Sort sessions by newest first (reverse logic requires tracking timestamps, 
+        # but for now we just list them. Using standard dict order).
+        # We need a list of IDs to iterate
+        session_ids = list(st.session_state.sessions.keys())
+        
+        # Display sessions as buttons or radio (Radio is better for state selection)
+        # To make it look like a list of buttons, we use a radio with custom formatting or just buttons.
+        # Let's use a radio for simplicity in logic, but formatted nicely.
+        
+        session_titles = [st.session_state.sessions[sid]["title"] for sid in session_ids]
+        
+        # Find index of current session
+        current_index = 0
+        try:
+            current_index = session_ids.index(st.session_state.current_session_id)
+        except ValueError:
+            current_index = 0
+            st.session_state.current_session_id = session_ids[0]
+
+        selected_title = st.radio(
+            "Select Chat", 
+            session_titles, 
+            index=current_index, 
+            label_visibility="collapsed"
+        )
+        
+        # Sync selection back to ID (Find title back to ID is risky if duplicates, but okay for this prototype. 
+        # Better: match by index)
+        # We find the index of the selected title in the titles list
+        # Note: This is imperfect if titles are identical. 
+        # Ideally Streamlit's key system handles this, but radio returns the value.
+        # Let's assume user clicks the radio.
+        
+        # Hack to map title back to ID accurately: Use formatting
+        selected_index = session_titles.index(selected_title)
+        st.session_state.current_session_id = session_ids[selected_index]
+
+        st.divider()
+        
+        # 3. Settings
+        st.markdown("### Settings")
         user_language = st.selectbox(
-            "Response Language (回覆語言)", 
+            "Response Language", 
             ["zh-tw", "en", "de"],
             index=0,
             help="Choose the language you want the assistant to reply in."
         )
-        show_graph = st.toggle("Show Reasoning Graph (顯示思考路徑)", value=False)
-        st.divider()
-        st.markdown("### Multimodal Capabilities")
-        st.write("You can upload images of legal documents for analysis.")
-        st.divider()
-        st.markdown("Powered by **LawGPT**")
+        show_graph = st.toggle("Show Reasoning Graph", value=False)
+        
+        st.markdown("---")
+        # Delete Button for current chat
+        if st.button("🗑️ Delete Current Chat"):
+            delete_chat(st.session_state.current_session_id)
+            st.rerun()
 
-    # Main Interface
-    st.title("⚖️ LawGPT: German Law Assistant")
-    st.caption("Ask anything about German Statutory Law. Input can be in any language.")
+    # --- Main Interface ---
+    
+    # Get current session data
+    current_session = st.session_state.sessions[st.session_state.current_session_id]
+    messages = current_session["messages"]
 
-    # Initialize Chat History
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant", "content": "Hello! I am LawGPT. I can help you with German legal questions (BGB)."}
-        ]
+    st.caption(f"Current Chat: {current_session['title']}")
 
-    # Display Chat History
-    for msg in st.session_state.messages:
+    # Initialize components (Cached)
+    if "retriever" not in st.session_state:
+        st.session_state.retriever = Retriever()
+    if "llm" not in st.session_state:
+        st.session_state.llm = GeminiLLMAPI(
+            api_key=settings.GOOGLE_API_KEY,
+            model="gemini-flash-latest",
+            system_instruction=(
+                "You are an expert German legal advisor. "
+                "Your primary knowledge source is the German Civil Code (BGB). "
+                "Regardless of the input language, you MUST respond in the language specified by the user in the prompt."
+            )
+        )
+
+    # Display Chat History for *Current Session*
+    for msg in messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
             if "image" in msg:
                 st.image(msg["image"], caption="Uploaded Image", use_column_width=True)
-            # Show disclaimer for past assistant messages if it's the last one? 
-            # Ideally, disclaimer is shown after every assistant response.
-            # We can simplify by just showing it for the NEW response.
 
     # Input Area
     prompt = st.chat_input("Ask a legal question...")
     uploaded_file = st.file_uploader("Upload an image (optional)", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
 
     if prompt:
-        # 1. Handle User Input
-        user_msg_content = prompt
+        # 1. Update Title (if first user message)
+        if current_session["title"] == "New Chat":
+            # Truncate prompt for title
+            new_title = prompt[:20] + "..." if len(prompt) > 20 else prompt
+            current_session["title"] = new_title
+            # We don't rerun here to avoid interrupting flow, title updates next render
+
+        # 2. Handle User Input
         user_image = None
-        
-        # Display User Message
         if uploaded_file:
             user_image = Image.open(uploaded_file)
-            st.session_state.messages.append({"role": "user", "content": prompt, "image": user_image})
+            messages.append({"role": "user", "content": prompt, "image": user_image})
             with st.chat_message("user"):
                 st.markdown(prompt)
                 st.image(user_image, caption="Uploaded Image", use_column_width=True)
         else:
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-        # 2. Run Agent (LangGraph)
+        # 3. Run Agent (LangGraph)
         with st.chat_message("assistant"):
             with st.spinner("Analyzing legal context..."):
                 try:
-                    # Construct input for the graph with Full History
-                    # Hack: Since we want to use the LangGraph structure, we pass the text query.
-                    # The prompt construction in graph_agent needs to know about user_language too.
-                    
-                    # 1. Convert session history to LangChain messages
+                    # History Conversion
                     history_messages = []
-                    for msg in st.session_state.messages:
+                    for msg in messages:
                         if msg["role"] == "user":
-                            # We might want to include the image in the history if we supported multimodal history fully
-                            # For now, text history is the priority for reasoning
                             history_messages.append(HumanMessage(content=msg["content"]))
                         elif msg["role"] == "assistant":
                             history_messages.append(AIMessage(content=msg["content"]))
                     
-                    # 2. Append the current enhanced prompt (System Instruction Injection)
-                    # Ideally, system instruction should be a SystemMessage at the start.
-                    # But our graph agent might not expect it. Let's stick to the current pattern 
-                    # but append the history BEFORE the new prompt.
-                    
-                    # Current Prompt with Strict Instruction
+                    # Prepare Input
                     enhanced_prompt = f"STRICT INSTRUCTION: Respond only in {user_language}.\n\n{prompt}"
-                    
-                    # Note: We don't append enhanced_prompt to history_messages directly because 
-                    # we want the history to represent the actual conversation, and the new message 
-                    # triggers the agent. The Agent's state will start with history + new message.
-                    
-                    # Actually, for the Agent to "see" the history, we just pass the list.
-                    # But we need to make sure we don't duplicate the last user message which we just added to session_state.
-                    # Let's rebuild the input state cleanly.
-                    
-                    input_messages = history_messages[:-1] # All except the last one (which is the raw prompt)
-                    input_messages.append(HumanMessage(content=enhanced_prompt)) # Add the instruction-enhanced prompt
+                    input_messages = history_messages[:-1] 
+                    input_messages.append(HumanMessage(content=enhanced_prompt))
                     
                     initial_state = {
                         "messages": input_messages,
                         "documents": [] 
                     }
                     
-                    # Invoke the graph!
+                    # Invoke Graph
                     final_state = app.invoke(initial_state)
                     
-                    # Extract the *last* AIMessage from the result (the new response)
-                    # The graph returns the full history. We only want the new part.
+                    # Extract Response
                     new_messages = final_state['messages'][len(input_messages):] 
-                    
-                    # Find the AI response text
                     response_text = "I'm sorry, I couldn't generate a response."
                     for m in reversed(new_messages):
                         if isinstance(m, AIMessage):
@@ -136,9 +216,9 @@ def main():
                     
                     st.markdown(response_text)
                     
-                    # Source Preview (New Feature)
+                    # Source Preview
                     unique_sources = {}
-                    for msg in new_messages: # Only look for sources in the NEW execution
+                    for msg in new_messages:
                         if isinstance(msg, ToolMessage):
                             try:
                                 docs = json.loads(msg.content)
@@ -162,24 +242,22 @@ def main():
                                 st.divider()
 
                     # Disclaimer
-                    st.warning(DISCLAIMERS.get(user_language, DISCLAIMERS["en"]), icon="⚠️")
+                    st.warning(DISCLAIMERS.get(user_language, DISCLAIMERS["en"]))
                     
                     # Graph Visualization
                     if show_graph:
-                        with st.expander("Show Reasoning Graph (思考決策圖)"):
+                        with st.expander("Show Reasoning Graph"):
                             try:
-                                # Provide a default mermaid png
                                 graph_image = app.get_graph().draw_mermaid_png()
                                 st.image(graph_image, caption="Agent Execution Path")
-                            except Exception as e:
-                                st.error(f"Could not generate graph: {e}")
-                                st.info("Graph visualization requires 'graphviz' or internet access for Mermaid.")
+                            except:
+                                st.info("Graph visualization unavailable.")
 
-                    # Save to history (Only the AI response)
-                    st.session_state.messages.append({"role": "assistant", "content": response_text})
+                    # Save to Session
+                    messages.append({"role": "assistant", "content": response_text})
                     
                 except Exception as e:
-                    error_msg = f"Sorry, I encountered an error: {str(e)}"
+                    error_msg = f"Error: {str(e)}"
                     st.error(error_msg)
 
 if __name__ == "__main__":
