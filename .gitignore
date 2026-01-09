@@ -177,3 +177,4 @@ list_models.py
 check_pinecone.py
 create_new_index.py
 update_env.py
+PLAN.md
