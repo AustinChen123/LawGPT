@@ -34,7 +34,8 @@ def html_extraction_de(base_url: str) -> list:
 
         # 提取內容，內容位於 "jurAbsatz" class 的 div 中
         content_divs = norm.find_all('div', class_='jurAbsatz')
-        current_content = " ".join([div.get_text(strip=True)
+        # Use newline to separate paragraphs, and space to separate elements within a paragraph
+        current_content = "\n".join([div.get_text(separator=" ", strip=True)
                                    for div in content_divs])
 
         # 取得 anchor ID 來生成連結
@@ -45,6 +46,11 @@ def html_extraction_de(base_url: str) -> list:
         else:
             link = None
         content_for_save = current_content.strip()
+        
+        # Noise Filter: Skip deleted sections (weggefallen) if they have no other content
+        if "(weggefallen)" in content_for_save and len(content_for_save) < 30:
+            continue
+
         # 將結果加入 sections 列表
         if (((content_for_save != "") and (content_for_save != "-")) and (link is not None)):
             sections.append({
