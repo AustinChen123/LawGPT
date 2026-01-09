@@ -14,6 +14,7 @@ Built with **LangGraph**, **Google Gemini 2.0 Flash**, and **Pinecone Serverless
 *   **Multi-Query Expansion (COT)**: The agent uses Chain-of-Thought reasoning to decompose a user's question into multiple distinct German search queries (Synonyms, Legal Terms, Statute Numbers), significantly improving recall.
 *   **Structural Chunking**: Instead of arbitrary character splitting, the preprocessor respects the legal hierarchy, chunking text by **Sections (Paragraphs)** to preserve the integrity of rules and exceptions.
 *   **Deduplicated Retrieval**: Aggregates results from multiple sub-queries to ensure a comprehensive context window.
+*   **LLM Reranking**: Applies a second-pass relevance filter using the LLM to discard irrelevant documents before generation.
 
 ### 🛡️ 3. Robustness & Compliance
 *   **Citation-First Generation**: Every legal claim is strictly grounded in retrieved documents.
@@ -34,6 +35,12 @@ Built with **LangGraph**, **Google Gemini 2.0 Flash**, and **Pinecone Serverless
 *   **UI**: Streamlit
 *   **Dependency Management**: `uv` (Fast Python package installer)
 *   **Testing**: `behave` (BDD Framework) & LLM-as-a-Judge Evaluation
+
+## 🏗️ Architecture & Branching
+
+*   **`main`**: Production-ready code.
+*   **`test/benchmark`**: **RAGAS Evaluation**. Contains synthetic data generators (`dataset_generator.py`) and LLM-as-a-Judge logic (`judge.py`). This branch calculates metrics like **Context Recall** and **Faithfulness**.
+*   **`test/bdd-framework`**: **Behavior Tests**. Contains `behave` features and steps for end-to-end scenario verification.
 
 ## 📦 Installation & Usage
 
@@ -69,9 +76,10 @@ Built with **LangGraph**, **Google Gemini 2.0 Flash**, and **Pinecone Serverless
     ```bash
     uv run behave bdd/features/legal_query.feature
     ```
-*   **Run Quantitative Evaluation**:
+*   **Run Quantitative Evaluation** (Switch to `test/benchmark` branch):
     ```bash
-    uv run python -m evaluation.run_eval
+    git checkout test/benchmark
+    uv run python -m evaluation.run_benchmark
     ```
 
 ## 📄 License
