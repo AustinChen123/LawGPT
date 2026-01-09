@@ -71,8 +71,8 @@ def main():
                         content_str = f.read()
                         data = json.loads(content_str)
 
-                    # Check if file has changed
-                    if not embed_state_manager.update_state(filename, content_str):
+                    # Check if file has changed (Transaction Start)
+                    if embed_state_manager.check_hash_match(filename, content_str):
                         print(f"[INFO] Skipping {filename} (No changes detected).")
                         continue
 
@@ -103,10 +103,10 @@ def main():
                                 "id": vector_id,
                                 "values": item["embedding"],
                                 "metadata": {
-                                    "main_topic": main_topic,
-                                    "section_title": section,
-                                    "content": item["chunk"],
-                                    "link": link,
+                                    "main_topic": main_topic if main_topic else "Unknown",
+                                    "section_title": section if section else "",
+                                    "content": item["chunk"] if item["chunk"] else "",
+                                    "link": link if link else "",
                                     "filename": filename
                                 }
                             }
@@ -126,6 +126,9 @@ def main():
                     if batch_vectors:
                         uploader.upload_batch(batch_vectors)
                         print(f"[INFO] Final batch for {filename} uploaded.")
+                        
+                    # Commit State (Transaction End)
+                    embed_state_manager.update_state(filename, content_str)
 
     # **3. RAG 流程**
     if args.rag or not (args.crawl or args.embedding):

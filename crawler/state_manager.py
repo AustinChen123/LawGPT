@@ -27,6 +27,15 @@ class StateManager:
     def get_hash(self, key: str) -> str:
         return self.state.get(key, {}).get("hash")
 
+    def check_hash_match(self, key: str, content: str) -> bool:
+        """
+        Checks if the content hash matches the stored state without updating it.
+        Returns True if matched (no change), False otherwise.
+        """
+        new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        old_hash = self.get_hash(key)
+        return new_hash == old_hash
+
     def update_state(self, key: str, content: str):
         """
         Updates the state with the new hash of the content.
