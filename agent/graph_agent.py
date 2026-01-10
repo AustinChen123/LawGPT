@@ -9,16 +9,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMe
 from config.settings import Settings
 from rag.gemini_api import GeminiLLMAPI
 from rag.retriever import Retriever
+from core.schemas import AgentState
 
-
-# 1. Define the state for the graph
-class AgentState(TypedDict):
-    """
-    Represents the state of our agent.
-    """
-    messages: Annotated[Sequence[BaseMessage], operator.add]
-    documents: Annotated[list[dict], operator.add]
-    intent: str # 'legal_query' or 'general_chat'
 
 # 2. Define the tools
 retriever = Retriever()
@@ -58,7 +50,7 @@ def retrieve_articles_tool(query: str, filters: dict = None) -> str:
 
 # 3. Create the LLM
 settings = Settings()
-llm = GeminiLLMAPI(api_key=settings.GOOGLE_API_KEY, model="gemini-flash-latest")
+llm = GeminiLLMAPI(api_key=settings.GOOGLE_API_KEY, model=settings.DEFAULT_LLM_MODEL)
 
 # 4. Define the nodes
 

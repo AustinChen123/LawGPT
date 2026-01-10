@@ -14,6 +14,7 @@ class Settings:
     ENDPOINT = "https://www.gesetze-im-internet.de"
     PINECONE_HOST = os.getenv("PINECONE_HOST")
     GEMINI_RATE_LIMIT_DELAY = float(os.getenv("GEMINI_RATE_LIMIT_DELAY", 0))
+    DEFAULT_LLM_MODEL = "gemini-flash-latest"
     TARGET_LIST = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
                    "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X",
                    "Y", "Z", "1", "2", "3", "4", "5", "6", "7", "8", "9"]

@@ -66,6 +66,16 @@ class Uploader:
         pc = pinecone.Pinecone(api_key=api_key)
         self.index = pc.Index(index_name)
         self.progress_file = PROGRESS_PATH
+        
+        # Safety Check: Dimension Mismatch
+        try:
+            stats = self.index.describe_index_stats()
+            if stats.get('dimension') != 768:
+                print(f"[WARN] ⚠️  Pinecone Index Dimension Mismatch! Found: {stats.get('dimension')}, Expected: 768.")
+                print(f"[WARN] Please run 'python reset_db.py' to fix this, otherwise upserts will fail.")
+        except Exception as e:
+            # Index might not exist yet or connection error, ignore in init
+            pass
 
         # 初始化進度檔案
         if not os.path.exists(self.progress_file):

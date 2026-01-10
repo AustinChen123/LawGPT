@@ -157,7 +157,7 @@ def main():
     if "llm" not in st.session_state:
         st.session_state.llm = GeminiLLMAPI(
             api_key=settings.GOOGLE_API_KEY,
-            model="gemini-flash-latest",
+            model=settings.DEFAULT_LLM_MODEL,
             system_instruction=(
                 "You are an expert German legal advisor. "
                 "Your primary knowledge source is the German Civil Code (BGB). "
