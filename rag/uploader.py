@@ -3,6 +3,7 @@ import json
 import os
 import time
 import re
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 
 def sanitize_topic(topic):
@@ -101,6 +102,7 @@ class Uploader:
         }
         self.index.upsert(vectors=[item])
 
+    @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     def upload_batch(self, vectors: list):
         """
         批量上傳向量到 Pinecone
@@ -108,8 +110,13 @@ class Uploader:
         """
         if not vectors:
             return
+        
         # Pinecone recommendation is to upload in batches of 100
-        self.index.upsert(vectors=vectors)
+        response = self.index.upsert(vectors=vectors)
+        
+        # Verify upload count
+        if response.upserted_count != len(vectors):
+            raise Exception(f"Upload mismatch! Expected {len(vectors)}, uploaded {response.upserted_count}")
 
     def delete_file_vectors(self, filename: str):
         """
