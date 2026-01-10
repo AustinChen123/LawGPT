@@ -124,7 +124,7 @@ def tool_decision_node(state: AgentState):
         f"You are an expert German legal researcher. Your goal is to retrieve the most relevant sections from the BGB (German Civil Code) for the user's query.\n"
         f"User Query: {last_message.content}\n\n"
         f"**Task:**\n"
-        f"1. **Analyze**: Briefly think step-by-step about the legal concepts, German terminology, and potential relevant statutes involved.\n"
+        f"1. **Analyze**: Briefly think step-by-step about the legal concepts. **Crucial**: If the user uses English legal terms (e.g., 'Holographic Will', 'Tort', 'Damages'), you MUST translate them to their precise German equivalents (e.g., 'Eigenhändiges Testament', 'Unerlaubte Handlung', 'Schadensersatz') for the search.\n"
         f"2. **Generate Queries**: Create 3 distinct search queries in **German**.\n"
         f"   - Query 1: Specific legal keywords or statute numbers (e.g., 'Testament Formvorschriften BGB').\n"
         f"   - Query 2: Natural language description of the legal issue in German.\n"
@@ -243,12 +243,15 @@ def generation_node(state: AgentState):
             f"You are a legal assistant. Answer based *only* on the provided documents.\n\n"
             f"**User Question:**\n{original_question}\n\n"
             f"**Legal Documents:**\n{document_str}\n\n"
-            f"**Instructions:**\n"
-            f"1. Answer using ONLY the information above.\n"
-            f"2. Cite the source for every claim.\n"
-            f"3. If documents are irrelevant/empty, state you cannot answer based on available texts.\n"
-            f"4. Do NOT include a disclaimer.\n\n"
-            f"**Answer:**"
+        f"**Instructions:**\n"
+        f"1. Answer the question using ONLY the information above.\n"
+        f"2. Cite the source for every claim. **CRITICAL**: You MUST explicitly mention the statute name and section number in your text (e.g., 'According to BGB § 123...' or '...as stated in § 2247 BGB'). Do not rely solely on links.\n"
+        f"3. If the provided documents are NOT relevant to the user's question (e.g., a recipe question vs a legal document), "
+        f"state clearly that you cannot answer based on the available legal texts. "
+        f"Do NOT summarize the irrelevant document and do NOT cite it in this case.\n"
+        f"4. Do NOT include a disclaimer at the end. The user interface will handle the legal disclaimer automatically.\n\n"
+        f"**Answer (with explicit citations):**"
+    )
         )
     else:
         # (General chat logic stays same...)
