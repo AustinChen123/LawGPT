@@ -6,9 +6,6 @@ from config.settings import Settings
 
 
 class GeminiEmbeddingAPI(BaseEmbeddingAPI):
-
-
-class GeminiEmbeddingAPI(BaseEmbeddingAPI):
     """
     Implementation of Embedding API using the new google.genai SDK
     """

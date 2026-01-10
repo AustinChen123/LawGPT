@@ -252,7 +252,6 @@ def generation_node(state: AgentState):
         f"4. Do NOT include a disclaimer at the end. The user interface will handle the legal disclaimer automatically.\n\n"
         f"**Answer (with explicit citations):**"
     )
-        )
     else:
         # (General chat logic stays same...)
         prompt = (
