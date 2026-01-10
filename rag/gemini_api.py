@@ -1,5 +1,11 @@
 from google.genai import Client
 from rag.base_api import BaseEmbeddingAPI, BaseLLMAPI
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import time
+from config.settings import Settings
+
+
+class GeminiEmbeddingAPI(BaseEmbeddingAPI):
 
 
 class GeminiEmbeddingAPI(BaseEmbeddingAPI):
@@ -53,6 +59,11 @@ class GeminiLLMAPI(BaseLLMAPI):
         :param images: Optional image or list of images (PIL.Image or bytes)
         :return: Generated response text
         """
+        # Rate Limit Protection
+        settings = Settings()
+        if settings.GEMINI_RATE_LIMIT_DELAY > 0:
+            time.sleep(settings.GEMINI_RATE_LIMIT_DELAY)
+
         contents = [prompt]
         if images:
             if isinstance(images, list):

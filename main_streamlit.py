@@ -198,8 +198,11 @@ def main():
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-        # 3. Run Agent
+        # 3. Run Agent (LangGraph)
         with st.chat_message("assistant"):
+            if settings.GEMINI_RATE_LIMIT_DELAY > 0:
+                st.caption("🐢 Free Tier Mode: Slowed down to avoid rate limits.")
+                
             with st.spinner(T["analyzing"]):
                 try:
                     # History Conversion

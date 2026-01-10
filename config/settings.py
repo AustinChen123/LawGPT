@@ -13,4 +13,5 @@ class Settings:
     INDEX_NAME = "lawgpt-768"
     ENDPOINT = "https://www.gesetze-im-internet.de"
     PINECONE_HOST = os.getenv("PINECONE_HOST")
-    TARGET_LIST = ["A"]
+    GEMINI_RATE_LIMIT_DELAY = float(os.getenv("GEMINI_RATE_LIMIT_DELAY", 0))
+    TARGET_LIST = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
